@@ -27,6 +27,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
   bool runningChecks = false;
   String? error;
   String? lastResult;
+  bool? lastResultSuccess;
   List<CheckRecord> checks = [];
   bool checksLoading = true;
   String? checksError;
@@ -83,7 +84,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
     bool saving = false;
 
     try {
-      final saved = await showDialog<bool>(
+      final saved = await showDialog<Map<String, dynamic>?>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -156,7 +157,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
             actions: [
               TextButton(
                 onPressed:
-                    saving ? null : () => Navigator.pop(dialogContext, false),
+                    saving ? null : () => Navigator.pop(dialogContext),
                 child: const Text('Cancel'),
               ),
               FilledButton(
@@ -182,8 +183,19 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                             );
                           }
 
+                          Map<String, dynamic>? latestCheck;
+                          final decoded = jsonDecode(response.body);
+                          if (decoded is Map &&
+                              decoded['latest_check'] is Map) {
+                            latestCheck = Map<String, dynamic>.from(
+                              decoded['latest_check'] as Map,
+                            );
+                          }
+
                           if (dialogContext.mounted) {
-                            Navigator.pop(dialogContext, true);
+                            Navigator.pop(dialogContext, {
+                              'latest_check': latestCheck,
+                            });
                           }
                         } catch (e) {
                           if (!dialogContext.mounted) return;
@@ -206,7 +218,22 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
         ),
       );
 
-      if (saved == true && mounted) {
+      if (saved != null && mounted) {
+        final latestCheck = saved['latest_check'];
+        if (latestCheck is Map) {
+          final success = latestCheck['success'] == true;
+          final statusCode = latestCheck['status_code'];
+          final errorMessage = latestCheck['error_message']?.toString() ?? '';
+          setState(() {
+            lastResultSuccess = success;
+            lastResult = success
+                ? 'Endpoint check succeeded'
+                    '${statusCode != null ? ' · HTTP $statusCode' : ''}'
+                : 'Endpoint check failed'
+                    '${statusCode != null ? ' · HTTP $statusCode' : ''}'
+                    '${errorMessage.isNotEmpty ? ' · $errorMessage' : ''}';
+          });
+        }
         await loadEndpoints();
         await loadChecks();
       }
@@ -264,6 +291,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
     setState(() {
       runningChecks = true;
       lastResult = null;
+      lastResultSuccess = null;
     });
 
     try {
@@ -275,6 +303,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       final data = jsonDecode(response.body);
       if (!mounted) return;
       setState(() {
+        lastResultSuccess = null;
         lastResult = _fullCheckSummary(data);
         runningChecks = false;
       });
@@ -287,6 +316,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        lastResultSuccess = null;
         lastResult = 'Could not run checks: $e';
         runningChecks = false;
       });
@@ -315,7 +345,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       final response =
           await ApiService.runEndpointCheck(projectId, endpointId);
 
-      if (response.statusCode != 200 && response.statusCode != 201) {
+      if (response.statusCode != 200) {
         throw Exception('API ${response.statusCode}: ${response.body}');
       }
 
@@ -327,6 +357,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       final duration = data is Map ? data['duration_ms'] : null;
 
       setState(() {
+        lastResultSuccess = success;
         lastResult =
             '${endpoint['name']}: ${success ? 'SUCCESS' : 'CHECK COMPLETED'}'
             '${status != null ? ' · HTTP $status' : ''}'
@@ -334,7 +365,10 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => lastResult = 'Check failed: $e');
+      setState(() {
+        lastResultSuccess = false;
+        lastResult = 'Check failed: $e';
+      });
     }
   }
 
@@ -406,8 +440,31 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: _border),
                 ),
-                child: Text(lastResult!,
-                    style: const TextStyle(color: Colors.white)),
+                child: Row(
+                  children: [
+                    if (lastResultSuccess != null) ...[
+                      Icon(
+                        lastResultSuccess == true
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color: lastResultSuccess == true ? _green : _red,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: Text(
+                        lastResult!,
+                        style: TextStyle(
+                          color: lastResultSuccess == true
+                              ? _green
+                              : lastResultSuccess == false
+                                  ? _red
+                                  : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
             const SizedBox(height: 24),
