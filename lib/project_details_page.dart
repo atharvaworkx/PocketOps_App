@@ -1,9 +1,10 @@
-
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'api_service.dart';
 import 'monitoring_models.dart';
-
 
 const _bg = Color(0xFF0B1017);
 const _surface = Color(0xFF141C26);
@@ -55,8 +56,9 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       }
 
       final data = jsonDecode(response.body);
-      final List<dynamic> items =
-          data is List ? data : (data['results'] as List? ?? []);
+      final List<dynamic> items = data is List
+          ? data
+          : (data['results'] as List? ?? []);
 
       if (!mounted) return;
       setState(() {
@@ -109,7 +111,9 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                       dropdownColor: _surface,
                       decoration: const InputDecoration(labelText: 'Method'),
                       items: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .map(
+                            (m) => DropdownMenuItem(value: m, child: Text(m)),
+                          )
                           .toList(),
                       onChanged: saving
                           ? null
@@ -117,7 +121,6 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                               if (value != null) {
                                 setDialogState(() => method = value);
                               }
-
                             },
                     ),
                     const SizedBox(height: 12),
@@ -156,8 +159,7 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
             ),
             actions: [
               TextButton(
-                onPressed:
-                    saving ? null : () => Navigator.pop(dialogContext),
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
                 child: const Text('Cancel'),
               ),
               FilledButton(
@@ -201,7 +203,9 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                           if (!dialogContext.mounted) return;
                           setDialogState(() => saving = false);
                           ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            SnackBar(content: Text('Could not add endpoint: $e')),
+                            SnackBar(
+                              content: Text('Could not add endpoint: $e'),
+                            ),
                           );
                         }
                       },
@@ -228,10 +232,10 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
             lastResultSuccess = success;
             lastResult = success
                 ? 'Endpoint check succeeded'
-                    '${statusCode != null ? ' · HTTP $statusCode' : ''}'
+                      '${statusCode != null ? ' · HTTP $statusCode' : ''}'
                 : 'Endpoint check failed'
-                    '${statusCode != null ? ' · HTTP $statusCode' : ''}'
-                    '${errorMessage.isNotEmpty ? ' · $errorMessage' : ''}';
+                      '${statusCode != null ? ' · HTTP $statusCode' : ''}'
+                      '${errorMessage.isNotEmpty ? ' · $errorMessage' : ''}';
           });
         }
         await loadEndpoints();
@@ -266,15 +270,15 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       final items = decoded is List
           ? decoded
           : decoded is Map && decoded['results'] is List
-              ? decoded['results'] as List
-              : <dynamic>[];
+          ? decoded['results'] as List
+          : <dynamic>[];
       if (!mounted) return;
       setState(() {
         checks = items
             .whereType<Map>()
-            .map((item) => CheckRecord.fromJson(
-                  Map<String, dynamic>.from(item),
-                ))
+            .map(
+              (item) => CheckRecord.fromJson(Map<String, dynamic>.from(item)),
+            )
             .toList();
         checksLoading = false;
       });
@@ -310,9 +314,9 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
       await loadChecks();
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Health checks triggered.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Health checks triggered.')));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -321,7 +325,6 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
         runningChecks = false;
       });
     }
-
   }
 
   String _fullCheckSummary(dynamic data) {
@@ -337,13 +340,150 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
     return 'Health check completed with no result details.';
   }
 
+  Future<void> _showResponseDetails(CheckRecord check) async {
+    final formattedBody = _formatResponseBody(check.responseSummary);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.65,
+            minChildSize: 0.35,
+            maxChildSize: 0.95,
+            builder: (context, scrollController) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Response body',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copy to clipboard',
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: formattedBody),
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Response copied to clipboard.'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy, color: _green),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _responseBadge(
+                      _statusLabel(check.statusCode),
+                      check.success == true ? _green : _red,
+                    ),
+                    if (check.durationMs != null)
+                      _responseBadge(
+                        '${check.durationMs!.toStringAsFixed(1)} ms',
+                        _muted,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _bg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _border),
+                    ),
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      child: SelectableText(
+                        formattedBody,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'monospace',
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatResponseBody(String responseSummary) {
+    if (responseSummary.trim().isEmpty) return '(empty response body)';
+    try {
+      final decoded = jsonDecode(responseSummary);
+      return const JsonEncoder.withIndent('  ').convert(decoded);
+    } on FormatException {
+      return responseSummary;
+    }
+  }
+
+  String _statusLabel(int? statusCode) {
+    if (statusCode == null) return 'Status unavailable';
+    final phrase = switch (statusCode) {
+      200 => 'OK',
+      201 => 'Created',
+      202 => 'Accepted',
+      204 => 'No Content',
+      400 => 'Bad Request',
+      401 => 'Unauthorized',
+      403 => 'Forbidden',
+      404 => 'Not Found',
+      500 => 'Internal Server Error',
+      502 => 'Bad Gateway',
+      503 => 'Service Unavailable',
+      _ => '',
+    };
+    return phrase.isEmpty ? 'HTTP $statusCode' : '$statusCode $phrase';
+  }
+
+  Widget _responseBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
   Future<void> runOneCheck(Map<String, dynamic> endpoint) async {
     final endpointId = endpoint['id']?.toString();
     if (endpointId == null || endpointId.isEmpty) return;
 
     try {
-      final response =
-          await ApiService.runEndpointCheck(projectId, endpointId);
+      final response = await ApiService.runEndpointCheck(projectId, endpointId);
 
       if (response.statusCode != 200) {
         throw Exception('API ${response.statusCode}: ${response.body}');
@@ -406,11 +546,15 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('BASE URL',
-                      style: TextStyle(color: _muted, fontSize: 12)),
+                  const Text(
+                    'BASE URL',
+                    style: TextStyle(color: _muted, fontSize: 12),
+                  ),
                   const SizedBox(height: 8),
-                  SelectableText(baseUrl,
-                      style: const TextStyle(color: _green)),
+                  SelectableText(
+                    baseUrl,
+                    style: const TextStyle(color: _green),
+                  ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -458,8 +602,8 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
                           color: lastResultSuccess == true
                               ? _green
                               : lastResultSuccess == false
-                                  ? _red
-                                  : Colors.white,
+                              ? _red
+                              : Colors.white,
                         ),
                       ),
                     ),
@@ -567,63 +711,89 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
               ...endpoints.map((endpoint) {
                 final method = endpoint['method']?.toString() ?? 'GET';
                 final path = endpoint['path']?.toString() ?? '';
-                final endpointName =
-                    endpoint['name']?.toString() ?? path;
+                final endpointName = endpoint['name']?.toString() ?? path;
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _surface,
-                    border: Border.all(color: _border),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _green.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(7),
-                            ),
-                            child: Text(
-                              method,
-                              style: const TextStyle(
-                                color: _green,
-                                fontWeight: FontWeight.bold,
+                final latestCheck = endpoint['latest_check'];
+                final latestRecord = latestCheck is Map
+                    ? CheckRecord.fromJson(
+                        Map<String, dynamic>.from(latestCheck),
+                      )
+                    : null;
+
+                return InkWell(
+                  onTap: latestRecord == null
+                      ? null
+                      : () => _showResponseDetails(latestRecord),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _surface,
+                      border: Border.all(color: _border),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _green.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                method,
+                                style: const TextStyle(
+                                  color: _green,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              endpointName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                endpointName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(path, style: const TextStyle(color: _muted)),
+                        if (latestRecord != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            latestRecord.success == true
+                                ? 'Latest check: ${_statusLabel(latestRecord.statusCode)}'
+                                : 'Latest check failed',
+                            style: TextStyle(
+                              color: latestRecord.success == true
+                                  ? _green
+                                  : _red,
+                              fontSize: 12,
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(path, style: const TextStyle(color: _muted)),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: () => runOneCheck(endpoint),
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Check now'),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton.icon(
+                            onPressed: () => runOneCheck(endpoint),
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text('Check now'),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -636,59 +806,71 @@ class _ProjectDetailsPageState extends State<ProjectDetailsPage> {
 
   Widget _checkCard(CheckRecord check) {
     final color = check.success == true ? _green : _red;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                check.success == true
-                    ? Icons.check_circle_outline
-                    : Icons.error_outline,
-                color: color,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  check.success == true ? 'Success' : 'Failed',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w700,
+    return InkWell(
+      onTap: () => _showResponseDetails(check),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  check.success == true
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline,
+                  color: color,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    check.success == true ? 'Success' : 'Failed',
+                    style: TextStyle(color: color, fontWeight: FontWeight.w700),
                   ),
                 ),
-              ),
-              if (check.statusCode != null)
-                Text(
-                  'HTTP ${check.statusCode}',
-                  style: const TextStyle(color: _muted),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            [
-              if (check.durationMs != null)
-                '${check.durationMs!.toStringAsFixed(1)} ms',
-              if (check.checkedAt != null)
-                check.checkedAt!.toLocal().toString().split('.').first,
-              if (check.endpointId != null) 'Endpoint ${check.endpointId}',
-            ].join('  •  '),
-            style: const TextStyle(color: _muted, fontSize: 12),
-          ),
-          if (check.errorMessage.isNotEmpty) ...[
+                if (check.statusCode != null)
+                  Text(
+                    'HTTP ${check.statusCode}',
+                    style: const TextStyle(color: _muted),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
-            Text(check.errorMessage,
-                style: const TextStyle(color: _red, fontSize: 12)),
+            Text(
+              [
+                if (check.durationMs != null)
+                  '${check.durationMs!.toStringAsFixed(1)} ms',
+                if (check.checkedAt != null)
+                  check.checkedAt!.toLocal().toString().split('.').first,
+                if (check.endpointId != null) 'Endpoint ${check.endpointId}',
+              ].join('  •  '),
+              style: const TextStyle(color: _muted, fontSize: 12),
+            ),
+            if (check.errorMessage.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                check.errorMessage,
+                style: const TextStyle(color: _red, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _showResponseDetails(check),
+                icon: const Icon(Icons.visibility_outlined, size: 17),
+                label: const Text('View response'),
+              ),
+            ),
           ],
-        ],
+        ),
       ),
     );
   }
